@@ -60,7 +60,7 @@ def download_covers(limit: List[int], genres: List[str]):
             print(f"[{count}] {mbid} failed ({failed} fails so far)")
             continue
         with open(Path(CACHE_DIR, mbid).with_suffix(".jpg"), "wb") as f:
-            for chunk in r:
+            for chunk in r.iter_content(1024):
                 f.write(chunk)
         print(f"[{count}] {mbid} downloaded [{genre}]")
     print(f"Downloaded {count - failed} covers in {time.time() - start} seconds")
