@@ -2,13 +2,13 @@ import shutil
 import sqlite3
 import sys
 import time
+from multiprocessing import Pool
 from pathlib import Path
-from typing import List, Set
+from typing import List, Set, Tuple
 
 import requests
 
 CACHE_DIR = "cache"
-INDEX_FILE = "index"
 DB_DIR = "db"
 COVERT_ART_URL = "https://coverartarchive.org/release-group/{mbid}/front-500"
 
@@ -24,6 +24,18 @@ def get_cache() -> Set[str]:
 def get_db() -> sqlite3.Connection:
     """Open a connection to the local database."""
     return sqlite3.connect(Path("mbdump", "mb.sqlite"))
+
+
+def download_cover(mbid):
+    """Download a cover."""
+    url = COVERT_ART_URL.replace("{mbid}", mbid)
+    r = requests.get(url, stream=True)
+    if r.status_code != 200:
+        return False
+    with open(Path(CACHE_DIR, mbid).with_suffix(".jpg"), "wb") as f:
+        for chunk in r:
+            f.write(chunk)
+    return True
 
 
 def download_covers(limit: List[int], genres: List[str]):
@@ -48,21 +60,26 @@ def download_covers(limit: List[int], genres: List[str]):
     """
     count = 0
     failed = 0
-    for row in db.execute(sql, genres + list(map(str, limit))):
-        mbid, genre = row
-        if mbid in cache:
-            continue
-        count += 1
-        url = COVERT_ART_URL.replace("{mbid}", mbid)
-        r = requests.get(url)
-        if r.status_code != 200:
-            failed += 1
-            print(f"[{count}] {mbid} failed ({failed} fails so far)")
-            continue
-        with open(Path(CACHE_DIR, mbid).with_suffix(".jpg"), "wb") as f:
-            for chunk in r.iter_content(1024):
-                f.write(chunk)
-        print(f"[{count}] {mbid} downloaded [{genre}]")
+    rows: List[Tuple[str, str]] = [
+        (mbid, genre)
+        for (mbid, genre) in db.execute(sql, genres + list(map(str, limit)))
+        if mbid not in cache
+    ]
+    pool = Pool()
+    try:
+        for ((mbid, genre), successful) in zip(
+            rows, pool.imap(download_cover, map(lambda x: x[0], rows))
+        ):
+            count += 1
+            if successful:
+                print(f"[{count}] {mbid} Cover art downloaded #{genre}")
+            else:
+                failed += 1
+                print(f"[{count}] {mbid} Download failed ({failed} fails so far)")
+    except KeyboardInterrupt:
+        pool.terminate()
+        pool.join()
+
     print(f"Downloaded {count - failed} covers in {time.time() - start} seconds")
 
 
