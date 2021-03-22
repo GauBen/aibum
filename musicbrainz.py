@@ -28,14 +28,17 @@ def get_db() -> sqlite3.Connection:
 
 def download_cover(mbid):
     """Download a cover."""
-    url = COVERT_ART_URL.replace("{mbid}", mbid)
-    r = requests.get(url, stream=True)
-    if r.status_code != 200:
-        return False
-    with open(Path(CACHE_DIR, mbid).with_suffix(".jpg"), "wb") as f:
-        for chunk in r:
-            f.write(chunk)
-    return True
+    try:
+        url = COVERT_ART_URL.replace("{mbid}", mbid)
+        r = requests.get(url, stream=True)
+        if r.status_code != 200:
+            return False
+        with open(Path(CACHE_DIR, mbid).with_suffix(".jpg"), "wb") as f:
+            for chunk in r:
+                f.write(chunk)
+        return True
+    except KeyboardInterrupt:
+        raise RuntimeError()
 
 
 def download_covers(limit: List[int], genres: List[str]):
@@ -78,7 +81,7 @@ def download_covers(limit: List[int], genres: List[str]):
                 print(f"[{count}] {mbid} Download failed ({failed} fails so far)")
     except KeyboardInterrupt:
         pool.terminate()
-        pool.join()
+        pool.close()
 
     print(f"Downloaded {count - failed} covers in {time.time() - start} seconds")
 
